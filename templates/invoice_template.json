@@ -1,0 +1,13 @@
+{
+  "name": "通用发票模板",
+  "description": "用于提取常见发票的关键信息。",
+  "fields": [
+    {"name": "发票日期", "format": "YYYY-MM-DD", "required": true},
+    {"name": "金额", "format": "数字 (保留两位小数)", "required": true},
+    {"name": "发票号码", "format": "文本", "required": true},
+    {"name": "购买方名称", "format": "文本", "required": false},
+    {"name": "销售方名称", "format": "文本", "required": false}
+  ],
+  "output_format_hint": "CSV",
+  "notes": "如果存在税前和税后金额，优先提取税后总金额。"
+}

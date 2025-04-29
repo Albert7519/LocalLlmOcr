@@ -1,0 +1,10 @@
+streamlit
+torch
+modelscope
+transformers
+Pillow
+pandas
+openpyxl
+flash-attn
+accelerate
+sentencepiece

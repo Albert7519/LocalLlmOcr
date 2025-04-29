@@ -1,0 +1,13 @@
+{
+  "name": "通用财务报表模板",
+  "description": "用于提取财务报表中的关键指标。",
+  "fields": [
+    {"name": "报告期", "format": "YYYY-MM-DD 或 YYYY年Q?", "required": true},
+    {"name": "总收入", "format": "数字", "required": true},
+    {"name": "净利润", "format": "数字", "required": true},
+    {"name": "总资产", "format": "数字", "required": false},
+    {"name": "总负债", "format": "数字", "required": false}
+  ],
+  "output_format_hint": "JSON",
+  "notes": "确保提取的数字单位一致（例如，万元或亿元）。"
+}
