@@ -13,3 +13,6 @@ build/
 outputs/
 *.log
 .streamlit/
+# 临时模板文件 (AI生成的推荐模板)
+templates/temp_*.json
+temp_*.json

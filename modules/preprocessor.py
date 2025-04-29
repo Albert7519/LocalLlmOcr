@@ -57,7 +57,6 @@ def edit_template_interactive(template_data: dict) -> dict:
     display_columns = ["name", "format", "required"] + [col for col in fields_df.columns if col not in ["name", "format", "required"]]
     fields_df = fields_df[display_columns]
 
-
     edited_fields_df = st.data_editor(
         fields_df,
         num_rows="dynamic", # Allow adding/deleting rows
@@ -72,12 +71,39 @@ def edit_template_interactive(template_data: dict) -> dict:
     # Convert DataFrame back to list of dicts, handling potential NaNs/None
     edited_data["fields"] = edited_fields_df.astype(object).where(pd.notnull(edited_fields_df), None).to_dict('records')
 
+    # 处理可能无效的output_format_hint值
+    valid_formats = ["CSV", "JSON", "XLSX"]
+    current_format_hint = edited_data.get("output_format_hint", "CSV") # Get current hint or default to CSV
 
+    # 规范化格式提示
+    if current_format_hint not in valid_formats:
+        normalized_format = "CSV" # Default fallback
+        if isinstance(current_format_hint, str):
+            # Try to find a valid format within the string
+            if "JSON" in current_format_hint.upper():
+                normalized_format = "JSON"
+            elif "XLSX" in current_format_hint.upper():
+                normalized_format = "XLSX"
+            elif "CSV" in current_format_hint.upper():
+                 normalized_format = "CSV"
+        current_format_hint = normalized_format # Use the normalized format
+
+    # 确保格式有效
+    if current_format_hint not in valid_formats:
+        current_format_hint = "CSV" # Final safety net
+
+    try:
+        selected_index = valid_formats.index(current_format_hint)
+    except ValueError:
+        selected_index = 0 # Default to CSV if index lookup fails unexpectedly
+
+    # 使用验证过的索引
     edited_data["output_format_hint"] = st.selectbox(
         "建议输出格式",
-        options=["CSV", "JSON", "XLSX"],
-        index=["CSV", "JSON", "XLSX"].index(edited_data.get("output_format_hint", "CSV"))
+        options=valid_formats,
+        index=selected_index # Use the validated index
     )
+
     edited_data["notes"] = st.text_area("模板备注", value=edited_data.get("notes", ""))
 
     return edited_data
