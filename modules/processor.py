@@ -1,7 +1,7 @@
 import streamlit as st
 import torch
-from PIL import Image
 from typing import List, Dict, Any
+import gc # Import garbage collector
 
 def generate_prompt_from_template(template: Dict[str, Any]) -> str:
     """Generates an LLM prompt based on the provided template."""
@@ -43,7 +43,7 @@ def generate_prompt_from_template(template: Dict[str, Any]) -> str:
     return prompt
 
 def process_images(
-    images: List[Dict[str, Any]], # List of {'name': str, 'image': PIL.Image}
+    images: List[Dict[str, Any]], 
     template: Dict[str, Any],
     model,
     processor
@@ -105,8 +105,18 @@ def process_images(
             output_text = processor.batch_decode(
                 generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
             )
-
+            
+            # 获取结果后立即保存到变量中
             result_text = output_text[0] if output_text else ""
+            
+            # 然后再清理内存
+            del inputs, generated_ids, generated_ids_trimmed, output_text, text
+            # Manually trigger garbage collection
+            gc.collect()
+            # Clear CUDA cache to free GPU memory if available
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                
             results.append({"name": image_name, "raw_output": result_text, "prompt": prompt})
             st.success(f"处理完成: {image_name}")
 
