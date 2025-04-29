@@ -27,24 +27,102 @@ def display_results(results: List[Dict[str, Any]]):
 def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
     """Attempts to parse CSV-like text output into a DataFrame."""
     field_names = [field.get('name', f'列{i+1}') for i, field in enumerate(template.get('fields', []))]
+    
+    # 检查输出是否包含表格形式的数据（带有 | 分隔符）
+    if '|' in raw_output and '-|-' in raw_output.replace(' ', ''):
+        # 处理Markdown表格格式
+        try:
+            # 分割行
+            lines = [line.strip() for line in raw_output.split('\n') if line.strip()]
+            
+            # 移除可能的标题行和表头分隔行
+            data_lines = []
+            for line in lines:
+                # 跳过表头分隔行 (通常包含 -|-|- 这样的分隔符)
+                if line.replace(' ', '').startswith('|') and all(c == '-' or c == '|' or c == ':' or c == ' ' for c in line):
+                    continue
+                # 保留数据行
+                if '|' in line:
+                    # 清理行数据、分割并去除空格
+                    cleaned_line = line.strip('| ')
+                    cells = [cell.strip() for cell in cleaned_line.split('|')]
+                    data_lines.append(cells)
+            
+            # 如果第一行看起来像表头（与字段名匹配度高），就跳过
+            if data_lines and len(data_lines) > 1:
+                header_check = data_lines[0]
+                if len(header_check) == len(field_names):
+                    # 检查是否为表头（与字段名称有较高匹配度）
+                    match_count = sum(1 for h, f in zip(header_check, field_names) if h.lower().strip() == f.lower().strip())
+                    if match_count >= len(field_names) * 0.5:  # 如果50%以上匹配，认为是表头
+                        data_lines = data_lines[1:]  # 跳过表头
+            
+            # 创建DataFrame
+            if data_lines:
+                # 检查列数是否与字段数匹配，处理不一致情况
+                column_count = max(len(row) for row in data_lines)
+                if column_count > len(field_names):
+                    # 如果实际列数比字段数多，增加字段名
+                    field_names.extend([f'未命名列{i+1}' for i in range(column_count - len(field_names))])
+                elif column_count < len(field_names):
+                    # 如果实际列数比字段数少，使用实际列数
+                    field_names = field_names[:column_count]
+                
+                df = pd.DataFrame(data_lines, columns=field_names)
+                
+                # 数据清理：去除千位分隔符和货币符号等
+                for col in df.columns:
+                    if df[col].dtype == 'object':
+                        # 清理千位分隔符、货币符号等
+                        df[col] = df[col].str.replace(',', '', regex=True)
+                        df[col] = df[col].str.replace('¥', '', regex=True)
+                        df[col] = df[col].str.replace('$', '', regex=True)
+                        df[col] = df[col].str.replace('￥', '', regex=True)
+                
+                # 尝试将数值列转换为数值类型
+                for field in template.get('fields', []):
+                    col_name = field.get('name')
+                    col_format = field.get('format', '').lower()
+                    if col_name in df.columns:
+                        if '数字' in col_format or 'number' in col_format or 'int' in col_format or 'float' in col_format:
+                            df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
+                        elif 'date' in col_format or '日期' in col_format:
+                            df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
+                
+                return df
+        except Exception as e:
+            st.warning(f"解析表格时出错: {e}，将尝试其他解析方法。")
+    
+    # 如果不是表格或解析失败，尝试CSV解析
     try:
-        # Use StringIO to treat the string as a file
-        # Assume no header in the raw output as per prompt instructions
-        data = StringIO(raw_output.strip())
+        # 移除可能的Markdown标记和非CSV内容
+        cleaned_output = raw_output
+        # 如果找到代码块，提取其内容
+        if '```' in cleaned_output:
+            blocks = cleaned_output.split('```')
+            for i, block in enumerate(blocks):
+                if i % 2 == 1 and ('csv' in block.lower() or ',' in block):
+                    cleaned_output = block
+                    break
+        
+        # 使用StringIO处理CSV格式
+        data = StringIO(cleaned_output.strip())
         df = pd.read_csv(data, header=None, names=field_names, skipinitialspace=True)
-        # Attempt basic type conversion based on template hints (best effort)
+        
+        # 尝试基于模板提示进行数据类型转换
         for field in template.get('fields', []):
             col_name = field.get('name')
             col_format = field.get('format', '').lower()
             if col_name in df.columns:
                 if '数字' in col_format or 'number' in col_format or 'int' in col_format or 'float' in col_format:
-                    df[col_name] = pd.to_numeric(df[col_name], errors='coerce') # Coerce errors to NaN
+                    df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
                 elif 'date' in col_format or '日期' in col_format:
-                     df[col_name] = pd.to_datetime(df[col_name], errors='coerce') # Coerce errors to NaT
+                    df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
+        
         return df
     except Exception as e:
         st.warning(f"无法将输出解析为CSV: {e}. 将作为单列文本处理。")
-        # Fallback: return as a single column DataFrame
+        # 最后的回退方案：返回单列DataFrame
         return pd.DataFrame({'原始输出': raw_output.strip().split('\n')})
 
 

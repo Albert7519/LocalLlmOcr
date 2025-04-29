@@ -148,15 +148,17 @@ def handle_preprocessing():
 
             st.markdown("---") # Separator
             st.write("**保存模板:**")
-            new_template_name = st.text_input("另存为新模板名称 (留空则不保存)", key="save_as_name").strip()
-            if st.button("保存模板", key="save_template_button"): # Added key
+            
+            # 为了避免状态冲突，使用一个唯一键，比如基于时间或模板名称
+            save_key = f"save_as_name_{selected_option.replace(' ', '_')}"
+            new_template_name = st.text_input("另存为新模板名称 (留空则不保存)", key=save_key).strip()
+            
+            if st.button("保存模板", key=f"save_template_button_{selected_option.replace(' ', '_')}"):
                 if new_template_name:
                     template_to_save = edited_template # Save the latest edits
                     if helpers.save_template(new_template_name, template_to_save):
                         st.success(f"模板 '{new_template_name}' 已保存。请在上方重新选择以使用。")
-                        # Clear the input field after saving
-                        st.session_state.save_as_name = ""
-                        # Force rerun to update template list
+                        # 不尝试直接修改input值，而是通过重新运行来刷新界面
                         st.rerun()
                     else:
                         st.error("保存失败。")
