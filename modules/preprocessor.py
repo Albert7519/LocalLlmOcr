@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
-from utils import helpers # Import helper functions for templates
-import os # Needed for checking template existence
+from utils import helpers
+import os
+import json
+from typing import List, Dict, Any
 
 # Default structure for a new template
 DEFAULT_TEMPLATE = {
@@ -141,3 +143,112 @@ def handle_preprocessing():
         if selected_option != "--- 选择一个模板 ---": # Avoid error message if nothing is selected
              st.sidebar.error(f"无法加载模板: {selected_option}")
         return None
+
+# 添加智能推荐模板相关函数
+def analyze_image_content(image_data: Dict[str, Any], model, processor) -> Dict[str, Any]:
+    """使用大模型分析图片内容，返回推荐的模板字段"""
+    from modules import processor as processor_module  # 避免循环导入
+    
+    if not image_data or not model or not processor:
+        st.error("无法分析图片内容，缺少必要参数。")
+        return None
+    
+    # 提示词设计：让模型分析图片并提取可能的字段和结构
+    prompt = """你是一个专业的文档分析专家。请分析这张图片，识别出其中包含的所有关键信息字段。
+
+任务要求：
+1. 分析图片中包含的所有文本内容
+2. 识别出所有可能作为数据字段的信息（如姓名、日期、金额、编号等）
+3. 对每个识别出的字段，提供字段名称、数据格式和是否为必要字段
+4. 将识别结果以JSON格式输出
+
+输出格式示例：
+```json
+{
+  "fields": [
+    {"name": "字段1", "format": "文本/数字/日期等", "required": true/false},
+    {"name": "字段2", "format": "文本/数字/日期等", "required": true/false}
+  ],
+  "document_type": "发票/报表/证件/其他文档类型",
+  "output_format_hint": "CSV/JSON/XLSX"
+}
+```
+
+请确保以上JSON格式严格准确，不要添加额外解释，因为这将用于程序自动解析。"""
+
+    try:
+        # 使用现有处理模块调用大模型分析图片
+        analysis_result = processor_module.process_images(
+            images=[image_data],
+            template={"fields": [], "output_format_hint": "JSON", "notes": "自动分析图片内容"},
+            model=model,
+            processor=processor,
+            custom_prompt=prompt,
+            single_image_mode=True
+        )
+        
+        if not analysis_result or not analysis_result[0].get('raw_output'):
+            return None
+            
+        # 尝试解析JSON输出
+        raw_output = analysis_result[0]['raw_output']
+        
+        # 清理输出中的代码块标记
+        clean_output = raw_output.strip()
+        if "```json" in clean_output:
+            clean_output = clean_output.split("```json")[1]
+        if "```" in clean_output:
+            clean_output = clean_output.split("```")[0]
+        clean_output = clean_output.strip()
+        
+        try:
+            template_data = json.loads(clean_output)
+            # 添加基本模板信息
+            if "document_type" in template_data:
+                doc_type = template_data["document_type"]
+            else:
+                doc_type = "自动识别的文档"
+                
+            template = {
+                "name": f"AI推荐: {doc_type}",
+                "description": f"由AI自动分析图像内容生成的{doc_type}模板",
+                "fields": template_data.get("fields", []),
+                "output_format_hint": template_data.get("output_format_hint", "CSV"),
+                "notes": "此模板由AI自动推荐生成，请根据需要调整字段。"
+            }
+            return template
+        except json.JSONDecodeError as e:
+            st.error(f"无法解析模型输出为JSON: {e}")
+            return None
+            
+    except Exception as e:
+        st.error(f"分析图片时出错: {e}")
+        return None
+
+def handle_ai_recommendation(image_data: Dict[str, Any], model, processor):
+    """处理AI推荐模板的流程"""
+    if not image_data:
+        st.sidebar.warning("请先上传图片以使用AI推荐功能。")
+        return None
+        
+    # 修改：将spinner从侧边栏移到主页面区域
+    st.sidebar.info("🤖 AI正在分析图片内容...")
+    with st.spinner("正在分析图片内容，请稍候..."):
+        recommended_template = analyze_image_content(image_data, model, processor)
+        
+    if recommended_template:
+        # 保存临时模板并返回ID
+        temp_id = helpers.save_temp_template(recommended_template)
+        if temp_id:
+            st.sidebar.success("✅ AI已成功分析图片并推荐模板！")
+            # 设置会话状态，使得模板选择器自动选择这个临时模板
+            # 获取当前选项列表
+            available_templates = helpers.list_available_templates()
+            options = ["--- 选择一个模板 ---"] + available_templates + ["手动创建/编辑新模板"]
+            if temp_id in available_templates:
+                st.session_state.selected_template_option = temp_id
+                return temp_id
+        else:
+            st.sidebar.error("无法保存AI推荐的模板。")
+            
+    return None

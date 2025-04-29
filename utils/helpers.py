@@ -1,6 +1,7 @@
 import os
 import json
 import streamlit as st
+import uuid
 
 TEMPLATES_DIR = "templates"
 
@@ -43,3 +44,28 @@ def save_template(template_name: str, template_data: dict):
     except Exception as e:
         st.error(f"保存模板时出错 {filepath}: {e}")
         return False
+
+def create_temp_template_id():
+    """生成临时模板ID，用于智能推荐功能"""
+    return f"temp_{uuid.uuid4().hex[:8]}"
+
+def save_temp_template(template_data: dict) -> str:
+    """保存临时模板，返回模板ID"""
+    temp_id = create_temp_template_id()
+    filepath = os.path.join(TEMPLATES_DIR, f"{temp_id}.json")
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(template_data, f, ensure_ascii=False, indent=2)
+        return temp_id
+    except Exception as e:
+        st.error(f"保存临时模板时出错: {e}")
+        return None
+
+def cleanup_temp_templates():
+    """清理temp_开头的临时模板文件"""
+    try:
+        for filename in os.listdir(TEMPLATES_DIR):
+            if filename.startswith("temp_") and filename.endswith(".json"):
+                os.remove(os.path.join(TEMPLATES_DIR, filename))
+    except Exception as e:
+        print(f"清理临时模板时出错: {e}")

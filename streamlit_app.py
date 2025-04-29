@@ -32,6 +32,21 @@ with st.sidebar:
     # 1. File Upload
     processed_images = file_handler.handle_file_upload()
 
+    # 添加AI智能推荐模板按钮
+    if processed_images:
+        st.markdown("---")
+        st.subheader("AI 智能分析")
+        ai_recommend = st.button("🔍 AI 分析图片并推荐模板", key="ai_recommend_button")
+        
+        # 处理AI推荐请求
+        if ai_recommend and processed_images:
+            # 使用第一张图片进行分析
+            first_image = processed_images[0]
+            # 调用preprocessor的处理函数
+            preprocessor.handle_ai_recommendation(first_image, model, processor_instance)
+        elif ai_recommend:
+            st.warning("请先上传图片以使用AI推荐功能。")
+
     # 2. Template Selection/Editing
     active_template = preprocessor.handle_preprocessing()
 
@@ -79,3 +94,9 @@ if processed_images:
              st.write(f"- {img_data['name']}")
              # Optionally display small thumbnails
              # st.image(img_data['image'], width=100)
+
+# 添加对临时模板的清理逻辑（应用关闭时）
+import atexit
+from utils import helpers
+
+atexit.register(helpers.cleanup_temp_templates)

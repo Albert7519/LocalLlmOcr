@@ -3,8 +3,13 @@ import torch
 from typing import List, Dict, Any
 import gc # Import garbage collector
 
-def generate_prompt_from_template(template: Dict[str, Any]) -> str:
-    """Generates an LLM prompt based on the provided template."""
+def generate_prompt_from_template(template: Dict[str, Any], custom_prompt: str = None) -> str:
+    """Generates an LLM prompt based on the provided template or uses a custom prompt if provided."""
+    # 如果提供了自定义提示词，直接使用
+    if custom_prompt:
+        return custom_prompt
+        
+    # 否则根据模板生成提示词
     if not template or 'fields' not in template:
         return "请提供图片内容描述。" # Default basic prompt
 
@@ -46,7 +51,9 @@ def process_images(
     images: List[Dict[str, Any]], 
     template: Dict[str, Any],
     model,
-    processor
+    processor,
+    custom_prompt: str = None,
+    single_image_mode: bool = False
 ) -> List[Dict[str, Any]]:
     """Processes a list of images using the LLM based on the template."""
     results = []
@@ -60,16 +67,20 @@ def process_images(
         st.error("模型或处理器未加载。")
         return results
 
-    st.info(f"准备处理 {len(images)} 张图片...")
-    progress_bar = st.progress(0)
+    # 如果是single_image_mode，不显示进度信息，用于内部调用
+    if not single_image_mode:
+        st.info(f"准备处理 {len(images)} 张图片...")
+        progress_bar = st.progress(0)
 
     for i, img_data in enumerate(images):
         image_name = img_data['name']
         raw_image = img_data['image']
-        st.write(f"正在处理: {image_name}")
+        
+        if not single_image_mode:
+            st.write(f"正在处理: {image_name}")
 
         # 1. Generate prompt for this image based on the template
-        prompt = generate_prompt_from_template(template)
+        prompt = generate_prompt_from_template(template, custom_prompt)
 
         # 2. Prepare input for the model
         messages = [
@@ -118,15 +129,20 @@ def process_images(
                 torch.cuda.empty_cache()
                 
             results.append({"name": image_name, "raw_output": result_text, "prompt": prompt})
-            st.success(f"处理完成: {image_name}")
+            
+            if not single_image_mode:
+                st.success(f"处理完成: {image_name}")
 
         except Exception as e:
             error_msg = f"处理图片 '{image_name}' 时出错: {e}"
-            st.error(error_msg)
+            if not single_image_mode:
+                st.error(error_msg)
             results.append({"name": image_name, "raw_output": f"错误: {error_msg}", "prompt": prompt, "error": True})
 
-        # Update progress bar
-        progress_bar.progress((i + 1) / len(images))
+        # Update progress bar if not in single image mode
+        if not single_image_mode and 'progress_bar' in locals():
+            progress_bar.progress((i + 1) / len(images))
 
-    st.info("所有图片处理完毕。")
+    if not single_image_mode:
+        st.info("所有图片处理完毕。")
     return results
