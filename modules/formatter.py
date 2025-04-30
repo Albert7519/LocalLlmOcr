@@ -25,7 +25,7 @@ def display_results(results: List[Dict[str, Any]]):
         st.markdown("---")
 
 def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
-    \"\"\"Attempts to parse CSV-like text output into a DataFrame, preserving string types.\"\"\"
+    """Attempts to parse CSV-like text output into a DataFrame, preserving string types."""
     field_names = [field.get('name', f'列{i+1}') for i, field in enumerate(template.get('fields', []))]
 
     # 检查输出是否包含表格形式的数据（带有 | 分隔符）
@@ -116,7 +116,7 @@ def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
 
 
 def _parse_json_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame | Dict: # Added template parameter
-    \"\"\"Attempts to parse JSON-like text output, preserving string types where possible.\"\"\"
+    """Attempts to parse JSON-like text output, preserving string types where possible."""
     try:
         # Clean potential markdown code blocks
         cleaned_output = raw_output.strip().removeprefix('```json').removesuffix('```').strip()
@@ -164,9 +164,8 @@ def format_data_for_export(
     results: List[Dict[str, Any]],
     template: Dict[str, Any]
 ) -> Dict[str, pd.DataFrame | Dict | str]:
-    \"\"\"Formats the raw results based on the template's output hint.
-    Returns a dictionary where keys are filenames and values are DataFrames (with string types), dicts, or raw strings.
-    \"\"\"
+    """Formats the raw results based on the template's output hint.
+    Returns a dictionary where keys are filenames and values are DataFrames (with string types), dicts, or raw strings."""
     formatted_data = {}
     if not results or not template:
         return formatted_data
