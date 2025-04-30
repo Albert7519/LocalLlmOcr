@@ -5,6 +5,7 @@ import pandas as pd # Add pandas import
 
 # Import modules
 from modules import auth, file_handler, preprocessor, processor, formatter, model_loader
+from utils import helpers # Ensure helpers is imported if needed directly
 
 # --- Page Config ---
 st.set_page_config(layout="wide", page_title="本地 LLM OCR 应用")
@@ -59,82 +60,87 @@ with st.sidebar:
 if start_processing:
     if processed_images and active_template and model and processor_instance:
         with st.spinner("🧠 正在调用大模型处理图片..."):
-            # Call the processor module
+            # Convert processed_images list to a dictionary with filename as key
+            input_images_dict = {img_data['name']: img_data['image'] for img_data in processed_images}
+            st.session_state.input_images = input_images_dict # Store as dictionary
+
+            # Call the processor module (pass the original list of dicts)
             results = processor.process_images(
-                images=processed_images,
+                images=processed_images, # Pass the list as expected by processor
                 template=active_template,
                 model=model,
-                processor=processor_instance # Pass the loaded processor instance
+                processor=processor_instance
             )
-            # Store results in session state to persist across reruns
+            # Store results in session state
             st.session_state.processing_results = results
 
-            # Format data immediately after processing
+            # Format data immediately
             formatted_data = formatter.format_data_for_export(results, active_template)
             st.session_state.formatted_data = formatted_data
-            # Initialize or clear edited data when new processing starts
+            # Initialize or clear edited data
             st.session_state.edited_data = {}
     elif not processed_images:
         st.warning("请先上传图片文件。")
     elif not active_template:
         st.warning("请选择或创建一个有效的处理模板。")
 
-# Display results if they exist in session state
+# Display results if they exist
 if 'processing_results' in st.session_state:
     formatter.display_results(st.session_state.processing_results) # Step 3
 
 # Add editable data section if formatted data exists
 if 'formatted_data' in st.session_state and st.session_state.formatted_data:
     st.subheader("4. 核查与修改提取结果")
-    st.info("您可以在下方的表格中直接修改提取的数据。修改后的数据将用于最终下载。")
+    st.info("您可以在下方的表格中直接修改提取的数据。修改后的数据将用于最终下载。点击“查看原图”可展开对应图片。")
 
-    # Initialize edited_data if it doesn't exist (e.g., after page reload)
+    # Initialize edited_data if it doesn't exist
     if 'edited_data' not in st.session_state:
         st.session_state.edited_data = {}
 
-    # Use columns for better layout if many files
-    # num_columns = min(len(st.session_state.formatted_data), 3) # Example: max 3 columns
-    # cols = st.columns(num_columns)
-    # current_col = 0
+    # Retrieve input images dictionary from session state
+    # Default to empty dict if not found
+    input_images_dict = st.session_state.get('input_images', {})
 
     for filename, data in st.session_state.formatted_data.items():
-        # with cols[current_col]: # Assign to a column
+        st.markdown(f"---") # Separator for each file section
+        st.markdown(f"**文件: {filename}**")
+
+        # Get the corresponding image from the dictionary
+        image_data = input_images_dict.get(filename) # Now correctly uses .get() on a dictionary
+
+        # Display image in an expander if available
+        if image_data:
+            with st.expander("查看原图", expanded=False):
+                st.image(image_data, caption=f"原图: {filename}", use_container_width=True)
+        else:
+            st.caption("未找到对应的预览图。")
+
+        # Display the data editor or other data representations
         if isinstance(data, pd.DataFrame) and not data.empty:
-            st.markdown(f"**文件: {filename}**")
-            # Use filename as key for data editor state
             edited_df = st.data_editor(
                 data,
-                key=f"editor_{filename}", # Unique key for each editor
-                num_rows="dynamic" # Allow adding/deleting rows if needed
+                key=f"editor_{filename}",
+                num_rows="dynamic"
             )
-            # Store the edited dataframe in session state
             st.session_state.edited_data[filename] = edited_df
         elif isinstance(data, pd.DataFrame) and data.empty:
-            st.markdown(f"**文件: {filename}**")
             st.write("此文件未提取到表格数据。")
-            st.session_state.edited_data[filename] = data # Store empty df
+            st.session_state.edited_data[filename] = data
         elif isinstance(data, str) and data.startswith("错误:"):
-             st.markdown(f"**文件: {filename}**")
              st.error(f"处理错误，无法编辑: {data}")
-             st.session_state.edited_data[filename] = data # Store error string
+             st.session_state.edited_data[filename] = data
         elif isinstance(data, dict):
-             st.markdown(f"**文件: {filename}**")
              st.write("数据为JSON对象，暂不支持直接编辑。")
-             st.json(data) # Display JSON
-             st.session_state.edited_data[filename] = data # Store original dict
+             st.json(data)
+             st.session_state.edited_data[filename] = data
         else:
-             st.markdown(f"**文件: {filename}**")
              st.write("数据格式未知或无法编辑。")
              st.text(str(data))
-             st.session_state.edited_data[filename] = data # Store original data
-
-        # current_col = (current_col + 1) % num_columns # Move to next column
-    st.markdown("---")
+             st.session_state.edited_data[filename] = data
 
 
 # Provide download buttons using the potentially edited data
 if 'edited_data' in st.session_state and st.session_state.edited_data:
-    # Pass the edited data to the download function
     formatter.provide_download_buttons(st.session_state.edited_data) # Step 5
 elif 'formatted_data' in st.session_state:
      # Fallback to formatted_data if edited_data somehow doesn't exist but formatted_data does
@@ -155,6 +161,4 @@ if processed_images:
 
 # 添加对临时模板的清理逻辑（应用关闭时）
 import atexit
-from utils import helpers
-
 atexit.register(helpers.cleanup_temp_templates)

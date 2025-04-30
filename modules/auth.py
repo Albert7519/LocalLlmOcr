@@ -35,9 +35,13 @@ def add_logout_button():
         if st.sidebar.button("退出登录"):
             st.session_state.logged_in = False
             # Clear other relevant session state if needed upon logout
-            # Example: Clear results or selected template
-            keys_to_clear = ['processing_results', 'formatted_data', 'selected_template_option', 'manual_template', 'loaded_template', 'loaded_template_name', 'edited_loaded_template']
+            keys_to_clear = [
+                'processing_results', 'formatted_data', 'edited_data',
+                'selected_template_option', 'manual_template',
+                'loaded_template', 'loaded_template_name', 'edited_loaded_template',
+                'input_images' # Add input_images to clear
+            ]
             for key in keys_to_clear:
                 if key in st.session_state:
                     del st.session_state[key]
-            st.rerun() # Rerun to show the login form again
+            st.rerun()
