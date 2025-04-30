@@ -7,7 +7,7 @@ import os # Import os for path manipulation
 
 def display_results(results: List[Dict[str, Any]]):
     """Displays the raw processing results from the LLM."""
-    st.subheader("3. 处理结果预览")
+    st.subheader("3. 处理结果预览") # Changed section number
     if not results:
         st.info("没有可显示的处理结果。请先上传文件并运行处理。")
         return
@@ -246,86 +246,111 @@ def format_data_for_export(
     return formatted_data
 
 
-def provide_download_buttons(formatted_data: Dict[str, pd.DataFrame | Dict | str]):
-    """Provides download buttons for the formatted data."""
-    st.subheader("4. 下载提取结果")
+def provide_download_buttons(edited_data: Dict[str, pd.DataFrame | Dict | str]): # Changed parameter name
+    """Provides download buttons for the formatted and potentially edited data."""
+    st.subheader("5. 下载提取结果") # Changed section number
 
-    if not formatted_data:
+    if not edited_data: # Check the edited_data parameter
         st.info("没有可供下载的数据。")
         return
 
     # Combine data if possible (e.g., multiple CSVs into one)
-    all_dfs = [df for df in formatted_data.values() if isinstance(df, pd.DataFrame) and not df.empty]
+    # Use the edited_data passed to the function
+    all_dfs = [df for df in edited_data.values() if isinstance(df, pd.DataFrame) and not df.empty]
     combined_df = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
     # --- Offer Combined Download ---
     if not combined_df.empty:
-        st.write("**合并下载 (所有成功处理的表格数据):**")
+        st.write("**合并下载 (所有成功处理并编辑后的表格数据):**") # Updated description
         col1, col2, col3 = st.columns(3)
 
         # CSV Download
-        csv_data = combined_df.to_csv(index=False).encode('utf-8-sig') # Use utf-8-sig for Excel compatibility
+        # Ensure all data is string for CSV to prevent Excel auto-formatting issues
+        csv_data = combined_df.astype(str).to_csv(index=False).encode('utf-8-sig') # Use utf-8-sig for Excel compatibility
         col1.download_button(
             label="下载合并 CSV",
             data=csv_data,
-            file_name="combined_output.csv",
+            file_name="combined_output_edited.csv", # Indicate edited
             mime="text/csv",
-            key="combined_csv_download"
+            key="combined_csv_download_edited" # Unique key
         )
 
         # XLSX Download
         output = BytesIO()
+        # Write to Excel, explicitly setting text format for all columns might be needed
+        # if openpyxl auto-detection is still causing issues.
+        # However, pandas usually handles this well if dtypes are strings.
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            combined_df.to_excel(writer, index=False, sheet_name='Combined Data')
+             # Convert to string before writing to Excel to preserve formatting
+            combined_df.astype(str).to_excel(writer, index=False, sheet_name='Combined Data')
         xlsx_data = output.getvalue()
         col2.download_button(
             label="下载合并 XLSX",
             data=xlsx_data,
-            file_name="combined_output.xlsx",
+            file_name="combined_output_edited.xlsx", # Indicate edited
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="combined_xlsx_download"
+            key="combined_xlsx_download_edited" # Unique key
         )
 
         # JSON Download (List of Records)
+        # Convert to string before JSON dump might not be necessary, JSON handles types
         json_data = combined_df.to_json(orient="records", indent=2, force_ascii=False)
         col3.download_button(
             label="下载合并 JSON",
             data=json_data.encode('utf-8'), # Encode JSON string to bytes
-            file_name="combined_output.json",
+            file_name="combined_output_edited.json", # Indicate edited
             mime="application/json",
-            key="combined_json_download"
+            key="combined_json_download_edited" # Unique key
         )
         st.markdown("---")
 
 
     # --- Offer Individual File Downloads ---
-    st.write("**单独下载 (每个文件):**")
-    for filename, data in formatted_data.items():
+    st.write("**单独下载 (每个文件，包含编辑后的数据):**") # Updated description
+    # Use the edited_data passed to the function
+    for filename, data in edited_data.items():
         base_name = os.path.splitext(filename)[0] # Remove original extension
         with st.expander(f"下载选项: {filename}"):
             if isinstance(data, pd.DataFrame):
                 if not data.empty:
                     col1_ind, col2_ind, col3_ind = st.columns(3)
-                    # CSV
-                    csv_ind = data.to_csv(index=False).encode('utf-8-sig')
-                    col1_ind.download_button(f"下载 CSV", csv_ind, f"{base_name}_output.csv", "text/csv", key=f"csv_{filename}")
-                    # XLSX
+                    # CSV - Convert to string
+                    csv_ind = data.astype(str).to_csv(index=False).encode('utf-8-sig')
+                    col1_ind.download_button(f"下载 CSV", csv_ind, f"{base_name}_output_edited.csv", "text/csv", key=f"csv_edited_{filename}")
+                    # XLSX - Convert to string
                     output_ind = BytesIO()
                     with pd.ExcelWriter(output_ind, engine='openpyxl') as writer:
-                        data.to_excel(writer, index=False, sheet_name='Sheet1')
+                        data.astype(str).to_excel(writer, index=False, sheet_name='Sheet1')
                     xlsx_ind = output_ind.getvalue()
-                    col2_ind.download_button(f"下载 XLSX", xlsx_ind, f"{base_name}_output.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"xlsx_{filename}")
+                    col2_ind.download_button(f"下载 XLSX", xlsx_ind, f"{base_name}_output_edited.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"xlsx_edited_{filename}")
                     # JSON
                     json_ind = data.to_json(orient="records", indent=2, force_ascii=False)
-                    col3_ind.download_button(f"下载 JSON", json_ind.encode('utf-8'), f"{base_name}_output.json", "application/json", key=f"json_{filename}")
+                    col3_ind.download_button(f"下载 JSON", json_ind.encode('utf-8'), f"{base_name}_output_edited.json", "application/json", key=f"json_edited_{filename}")
                 else:
                     st.info("此文件无表格数据可下载。")
             elif isinstance(data, dict): # Handle dictionary data (e.g., from JSON parsing)
                  json_str = json.dumps(data, indent=2, ensure_ascii=False)
-                 st.download_button(f"下载 JSON", json_str.encode('utf-8'), f"{base_name}_output.json", "application/json", key=f"json_dict_{filename}")
+                 st.download_button(f"下载 JSON", json_str.encode('utf-8'), f"{base_name}_output.json", "application/json", key=f"json_dict_{filename}") # No edit indication needed
                  st.write("数据为JSON对象，仅提供JSON下载。")
             elif isinstance(data, str) and data.startswith("错误:"):
                  st.error(f"无法下载，处理时发生错误: {data}")
             else: # Assume raw string or other format
-                 st.download_button(f"下载原始文本", str(data).encode('utf-8'), f"{base_name}_output.txt", "text/plain", key=f"txt_{filename}")
+                 st.download_button(f"下载原始文本", str(data).encode('utf-8'), f"{base_name}_output.txt", "text/plain", key=f"txt_{filename}") # No edit indication needed
                  st.write("数据格式无法识别为表格，提供原始文本下载。")
+
+def add_logout_button():
+    """Adds a logout button to the sidebar if logged in."""
+    if st.session_state.get('logged_in', False):
+        if st.sidebar.button("退出登录"):
+            st.session_state.logged_in = False
+            # Clear other relevant session state if needed upon logout
+            # Example: Clear results, selected template, formatted and edited data
+            keys_to_clear = [
+                'processing_results', 'formatted_data', 'edited_data', # Added edited_data
+                'selected_template_option', 'manual_template',
+                'loaded_template', 'loaded_template_name', 'edited_loaded_template'
+            ]
+            for key in keys_to_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun() # Rerun to show the login form again
