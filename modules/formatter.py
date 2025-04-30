@@ -68,8 +68,9 @@ def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
                     # 如果实际列数比字段数少，使用实际列数
                     field_names = field_names[:column_count]
                 
-                df = pd.DataFrame(data_lines, columns=field_names)
-                
+                # Read data as string first to preserve formatting
+                df = pd.DataFrame(data_lines, columns=field_names).astype(str)
+
                 # 数据清理：去除千位分隔符和货币符号等
                 for col in df.columns:
                     if df[col].dtype == 'object':
@@ -79,16 +80,26 @@ def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
                         df[col] = df[col].str.replace('$', '', regex=True)
                         df[col] = df[col].str.replace('￥', '', regex=True)
                 
-                # 尝试将数值列转换为数值类型
+                # Attempt type conversion based on template hints, skipping text-like formats
                 for field in template.get('fields', []):
                     col_name = field.get('name')
                     col_format = field.get('format', '').lower()
                     if col_name in df.columns:
-                        if '数字' in col_format or 'number' in col_format or 'int' in col_format or 'float' in col_format:
-                            df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
-                        elif 'date' in col_format or '日期' in col_format:
-                            df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
-                
+                        # Check if format hint suggests it should REMAIN text
+                        is_text_like = any(hint in col_format for hint in ['文本', '编号', '代码', 'id', 'text', 'code', 'string'])
+
+                        if not is_text_like: # Only convert if not explicitly text-like
+                            if '数字' in col_format or 'number' in col_format or 'int' in col_format or 'float' in col_format or '金额' in col_format:
+                                # Convert to numeric, coercing errors. Keep as object if conversion fails.
+                                df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
+                                # Optional: Fill NaNs created by coerce with original string or empty string
+                                # df[col_name] = df[col_name].fillna('') # Or keep as NaN depending on desired output
+                            elif 'date' in col_format or '日期' in col_format:
+                                # Convert to datetime, coercing errors. Keep as object if conversion fails.
+                                df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
+                                # Optional: Format date string after conversion if needed
+                                # df[col_name] = df[col_name].dt.strftime('%Y-%m-%d') # Example format
+
                 return df
         except Exception as e:
             st.warning(f"解析表格时出错: {e}，将尝试其他解析方法。")
@@ -105,50 +116,90 @@ def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
                     cleaned_output = block
                     break
         
-        # 使用StringIO处理CSV格式
+        # 使用StringIO处理CSV格式，READ ALL AS STRING INITIALLY
         data = StringIO(cleaned_output.strip())
-        df = pd.read_csv(data, header=None, names=field_names, skipinitialspace=True)
-        
-        # 尝试基于模板提示进行数据类型转换
+        # Read CSV with all columns as string type initially
+        df = pd.read_csv(data, header=None, names=field_names, skipinitialspace=True, dtype=str)
+
+        # Attempt type conversion based on template hints, skipping text-like formats
         for field in template.get('fields', []):
             col_name = field.get('name')
             col_format = field.get('format', '').lower()
             if col_name in df.columns:
-                if '数字' in col_format or 'number' in col_format or 'int' in col_format or 'float' in col_format:
-                    df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
-                elif 'date' in col_format or '日期' in col_format:
-                    df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
-        
+                 # Check if format hint suggests it should REMAIN text
+                is_text_like = any(hint in col_format for hint in ['文本', '编号', '代码', 'id', 'text', 'code', 'string'])
+
+                if not is_text_like: # Only convert if not explicitly text-like
+                    if '数字' in col_format or 'number' in col_format or 'int' in col_format or 'float' in col_format or '金额' in col_format:
+                        # Convert to numeric, coercing errors. Keep as object if conversion fails.
+                        df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
+                        # Optional: Fill NaNs created by coerce
+                        # df[col_name] = df[col_name].fillna('')
+                    elif 'date' in col_format or '日期' in col_format:
+                         # Convert to datetime, coercing errors. Keep as object if conversion fails.
+                        df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
+                        # Optional: Format date string
+                        # df[col_name] = df[col_name].dt.strftime('%Y-%m-%d')
+
         return df
     except Exception as e:
         st.warning(f"无法将输出解析为CSV: {e}. 将作为单列文本处理。")
-        # 最后的回退方案：返回单列DataFrame
-        return pd.DataFrame({'原始输出': raw_output.strip().split('\n')})
+        # Fallback: return single-column DataFrame, ensure dtype is string
+        return pd.DataFrame({'原始输出': raw_output.strip().split('\n')}).astype(str)
 
 
-def _parse_json_like(raw_output: str) -> pd.DataFrame | Dict:
+def _parse_json_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame | Dict: # Added template parameter
     """Attempts to parse JSON-like text output."""
     try:
         # Clean potential markdown code blocks
         cleaned_output = raw_output.strip().removeprefix('```json').removesuffix('```').strip()
         data = json.loads(cleaned_output)
+        df = None
         if isinstance(data, list): # List of records
-            return pd.DataFrame(data)
+            df = pd.DataFrame(data)
         elif isinstance(data, dict): # Single record or structured dict
-             # Try converting single dict to DataFrame row
              try:
-                 return pd.DataFrame([data])
-             except ValueError: # If dict structure isn't suitable for DataFrame directly
-                 return data # Return the dict itself
-        else:
+                 df = pd.DataFrame([data])
+             except ValueError:
+                 return data # Return the dict itself if not suitable for DataFrame
+
+        if df is not None:
+            # Ensure columns intended as text remain string type based on template
+            if template and 'fields' in template:
+                for field in template.get('fields', []):
+                    col_name = field.get('name')
+                    col_format = field.get('format', '').lower()
+                    if col_name in df.columns:
+                        is_text_like = any(hint in col_format for hint in ['文本', '编号', '代码', 'id', 'text', 'code', 'string'])
+                        # Also treat columns as text if they contain non-numeric strings after initial load
+                        # This handles cases where template might be missing/inaccurate but data is clearly text
+                        try:
+                            if not is_text_like and df[col_name].apply(lambda x: isinstance(x, str) and not x.replace('.', '', 1).isdigit() and x).any():
+                                is_text_like = True
+                        except Exception: # Handle potential errors during apply
+                            pass
+
+                        if is_text_like:
+                            # Explicitly convert to string to preserve format
+                            df[col_name] = df[col_name].astype(str)
+                        # Optional: Add selective numeric/date conversion here if needed, similar to _parse_csv_like
+                        # else:
+                        #    if '数字' in col_format ...:
+                        #        df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
+                        #    elif '日期' in col_format ...:
+                        #        df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
+
+            return df # Return df after specific conversions, not converting everything to str here.
+        else: # Handle cases where JSON wasn't list or dict suitable for DataFrame
             st.warning("解析的JSON不是列表或字典，将作为文本处理。")
-            return pd.DataFrame({'原始输出': [cleaned_output]})
+            return pd.DataFrame({'原始输出': [cleaned_output]}).astype(str) # Ensure string type
+
     except json.JSONDecodeError as e:
         st.warning(f"无法将输出解析为JSON: {e}. 将作为单列文本处理。")
-        return pd.DataFrame({'原始输出': raw_output.strip().split('\n')})
+        return pd.DataFrame({'原始输出': raw_output.strip().split('\n')}).astype(str) # Ensure string type
     except Exception as e:
         st.warning(f"处理JSON输出时出错: {e}. 将作为单列文本处理。")
-        return pd.DataFrame({'原始输出': raw_output.strip().split('\n')})
+        return pd.DataFrame({'原始输出': raw_output.strip().split('\n')}).astype(str) # Ensure string type
 
 
 def format_data_for_export(
@@ -178,14 +229,17 @@ def format_data_for_export(
 
         parsed_result = None
         if output_hint == 'CSV':
+            # Pass template to parsing function
             parsed_result = _parse_csv_like(raw_output, template)
         elif output_hint == 'JSON':
-            parsed_result = _parse_json_like(raw_output)
+             # Pass template to parsing function
+            parsed_result = _parse_json_like(raw_output, template)
         # Add XLSX hint handling if needed, often similar to CSV parsing
         elif output_hint == 'XLSX':
+             # Pass template to parsing function
              parsed_result = _parse_csv_like(raw_output, template) # Treat like CSV for parsing
         else: # Default or unknown hint, treat as raw text split by lines
-            parsed_result = pd.DataFrame({'原始输出': raw_output.strip().split('\n')})
+            parsed_result = pd.DataFrame({'原始输出': raw_output.strip().split('\n')}).astype(str) # Ensure string type
 
         formatted_data[filename] = parsed_result
 
