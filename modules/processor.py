@@ -1,9 +1,9 @@
 import streamlit as st
 import torch
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional # Import Optional
 import gc # Import garbage collector
 
-def generate_prompt_from_template(template: Dict[str, Any], custom_prompt: str = None) -> str:
+def generate_prompt_from_template(template: Dict[str, Any], custom_prompt: Optional[str] = None) -> str: # Use Optional[str]
     """Generates an LLM prompt based on the provided template or uses a custom prompt if provided."""
     # 如果提供了自定义提示词，直接使用
     if custom_prompt:
@@ -52,7 +52,7 @@ def process_images(
     template: Dict[str, Any],
     model,
     processor,
-    custom_prompt: str = None,
+    custom_prompt: Optional[str] = None, # Use Optional[str]
     single_image_mode: bool = False
 ) -> List[Dict[str, Any]]:
     """Processes a list of images using the LLM based on the template."""
@@ -82,54 +82,89 @@ def process_images(
         # 1. Generate prompt for this image based on the template
         prompt = generate_prompt_from_template(template, custom_prompt)
 
-        # 2. Prepare input for the model
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image"}, # Placeholder for the image
-                ],
-            }
-        ]
-        try:
-            text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            inputs = processor(
-                text=[text],
-                images=[raw_image],
-                padding=True,
-                return_tensors="pt",
-            ).to(model.device) # Use model's device
+        # 2. Prepare input for the model - Conditional based on model type
+        selected_model_name = st.session_state.get('selected_model_name', '') # Get selected model name
+
+        try: # Add try-except block for input preparation
+            if "Qwen" in selected_model_name:
+                # --- Qwen-VL Input Preparation ---
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image"}, # Placeholder for the image
+                        ],
+                    }
+                ]
+                text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                inputs = processor(
+                    text=[text],
+                    images=[raw_image],
+                    padding=True,
+                    return_tensors="pt",
+                ).to(model.device)
+                # --- End Qwen-VL Input ---
+            elif "InternVL" in selected_model_name:
+                # --- InternVL Input Preparation ---
+                # Directly process text and image together
+                inputs = processor(
+                    text=prompt, # Pass the prompt string directly
+                    images=raw_image, # Pass the raw image
+                    padding=True,
+                    return_tensors="pt",
+                ).to(model.device)
+                # --- End InternVL Input ---
+            else:
+                # Fallback or error for unsupported models
+                st.error(f"Unsupported model type for input preparation: {selected_model_name}")
+                results.append({"name": image_name, "raw_output": f"错误: 不支持的模型类型 {selected_model_name}", "prompt": prompt, "error": True})
+                continue # Skip to next image
 
             # 3. Generate response
             with torch.no_grad():
+                # Generation parameters might need model-specific adjustments
+                # Common parameters:
+                gen_kwargs = {
+                    "max_new_tokens": 1536,
+                    "do_sample": False, # Use greedy decoding for consistency
+                    # Add other potential parameters if needed, e.g., temperature, top_p for sampling
+                }
+                # Some models might use different parameter names or need specific ones
+                # Example: InternVL might benefit from specific settings if documented
                 generated_ids = model.generate(
-                    **inputs,
-                    max_new_tokens=1536, # Increased token limit slightly
-                    do_sample=False
+                    input_ids=inputs.get('input_ids'),
+                    pixel_values=inputs.get('pixel_values'),
+                    attention_mask=inputs.get('attention_mask'), # Include attention mask
+                    **gen_kwargs
                 )
 
             # 4. Decode the output
-            generated_ids_trimmed = [
-                out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-            ]
+            # Handle potential differences in decoding input_ids length
+            input_token_len = inputs.input_ids.shape[1] if inputs.get('input_ids') is not None else 0
+            generated_ids_trimmed = generated_ids[:, input_token_len:]
+
+            # Use processor.batch_decode for consistency
             output_text = processor.batch_decode(
                 generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
             )
-            
+
             # 获取结果后立即保存到变量中
             result_text = output_text[0] if output_text else ""
-            
+
             # 然后再清理内存
-            del inputs, generated_ids, generated_ids_trimmed, output_text, text
+            del inputs, generated_ids, generated_ids_trimmed, output_text
+            # Remove 'text' deletion if it wasn't created for InternVL
+            if "Qwen" in selected_model_name:
+                 del text
             # Manually trigger garbage collection
             gc.collect()
             # Clear CUDA cache to free GPU memory if available
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                
+
             results.append({"name": image_name, "raw_output": result_text, "prompt": prompt})
-            
+
             if not single_image_mode:
                 st.success(f"处理完成: {image_name}")
 
@@ -138,6 +173,10 @@ def process_images(
             if not single_image_mode:
                 st.error(error_msg)
             results.append({"name": image_name, "raw_output": f"错误: {error_msg}", "prompt": prompt, "error": True})
+            # Ensure cleanup even on error
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # Update progress bar if not in single image mode
         if not single_image_mode and 'progress_bar' in locals():
