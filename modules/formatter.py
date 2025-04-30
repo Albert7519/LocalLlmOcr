@@ -25,9 +25,9 @@ def display_results(results: List[Dict[str, Any]]):
         st.markdown("---")
 
 def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
-    """Attempts to parse CSV-like text output into a DataFrame."""
+    \"\"\"Attempts to parse CSV-like text output into a DataFrame, preserving string types.\"\"\"
     field_names = [field.get('name', f'列{i+1}') for i, field in enumerate(template.get('fields', []))]
-    
+
     # 检查输出是否包含表格形式的数据（带有 | 分隔符）
     if '|' in raw_output and '-|-' in raw_output.replace(' ', ''):
         # 处理Markdown表格格式
@@ -57,7 +57,7 @@ def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
                     if match_count >= len(field_names) * 0.5:  # 如果50%以上匹配，认为是表头
                         data_lines = data_lines[1:]  # 跳过表头
             
-            # 创建DataFrame
+            # 创建DataFrame, 强制所有列为字符串类型
             if data_lines:
                 # 检查列数是否与字段数匹配，处理不一致情况
                 column_count = max(len(row) for row in data_lines)
@@ -69,41 +69,26 @@ def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
                     field_names = field_names[:column_count]
                 
                 # Read data as string first to preserve formatting
+                # Ensure ALL columns are treated as strings initially
                 df = pd.DataFrame(data_lines, columns=field_names).astype(str)
 
-                # 数据清理：去除千位分隔符和货币符号等
+                # 数据清理：去除千位分隔符和货币符号等 (保持字符串类型)
                 for col in df.columns:
-                    if df[col].dtype == 'object':
-                        # 清理千位分隔符、货币符号等
-                        df[col] = df[col].str.replace(',', '', regex=True)
-                        df[col] = df[col].str.replace('¥', '', regex=True)
-                        df[col] = df[col].str.replace('$', '', regex=True)
-                        df[col] = df[col].str.replace('￥', '', regex=True)
-                
-                # Attempt type conversion based on template hints, skipping text-like formats
-                for field in template.get('fields', []):
-                    col_name = field.get('name')
-                    col_format = field.get('format', '').lower()
-                    if col_name in df.columns:
-                        # Check if format hint suggests it should REMAIN text
-                        is_text_like = any(hint in col_format for hint in ['文本', '编号', '代码', 'id', 'text', 'code', 'string'])
+                    if df[col].dtype == 'object': # Check if it's object/string type
+                        # Clean common separators but keep as string
+                        df[col] = df[col].str.replace(',', '', regex=False) # Use regex=False for simple replacements
+                        df[col] = df[col].str.replace('¥', '', regex=False)
+                        df[col] = df[col].str.replace('$', '', regex=False)
+                        df[col] = df[col].str.replace('￥', '', regex=False)
 
-                        if not is_text_like: # Only convert if not explicitly text-like
-                            if '数字' in col_format or 'number' in col_format or 'int' in col_format or 'float' in col_format or '金额' in col_format:
-                                # Convert to numeric, coercing errors. Keep as object if conversion fails.
-                                df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
-                                # Optional: Fill NaNs created by coerce with original string or empty string
-                                # df[col_name] = df[col_name].fillna('') # Or keep as NaN depending on desired output
-                            elif 'date' in col_format or '日期' in col_format:
-                                # Convert to datetime, coercing errors. Keep as object if conversion fails.
-                                df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
-                                # Optional: Format date string after conversion if needed
-                                # df[col_name] = df[col_name].dt.strftime('%Y-%m-%d') # Example format
+                # NO automatic type conversion here. Keep everything as string for the editor.
+                # Type conversion should happen only during final export if needed,
+                # or if specific calculations are required elsewhere.
 
                 return df
         except Exception as e:
             st.warning(f"解析表格时出错: {e}，将尝试其他解析方法。")
-    
+
     # 如果不是表格或解析失败，尝试CSV解析
     try:
         # 移除可能的Markdown标记和非CSV内容
@@ -119,27 +104,9 @@ def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
         # 使用StringIO处理CSV格式，READ ALL AS STRING INITIALLY
         data = StringIO(cleaned_output.strip())
         # Read CSV with all columns as string type initially
-        df = pd.read_csv(data, header=None, names=field_names, skipinitialspace=True, dtype=str)
+        df = pd.read_csv(data, header=None, names=field_names, skipinitialspace=True, dtype=str) # Ensure dtype=str
 
-        # Attempt type conversion based on template hints, skipping text-like formats
-        for field in template.get('fields', []):
-            col_name = field.get('name')
-            col_format = field.get('format', '').lower()
-            if col_name in df.columns:
-                 # Check if format hint suggests it should REMAIN text
-                is_text_like = any(hint in col_format for hint in ['文本', '编号', '代码', 'id', 'text', 'code', 'string'])
-
-                if not is_text_like: # Only convert if not explicitly text-like
-                    if '数字' in col_format or 'number' in col_format or 'int' in col_format or 'float' in col_format or '金额' in col_format:
-                        # Convert to numeric, coercing errors. Keep as object if conversion fails.
-                        df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
-                        # Optional: Fill NaNs created by coerce
-                        # df[col_name] = df[col_name].fillna('')
-                    elif 'date' in col_format or '日期' in col_format:
-                         # Convert to datetime, coercing errors. Keep as object if conversion fails.
-                        df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
-                        # Optional: Format date string
-                        # df[col_name] = df[col_name].dt.strftime('%Y-%m-%d')
+        # NO automatic type conversion here. Keep as string.
 
         return df
     except Exception as e:
@@ -149,47 +116,38 @@ def _parse_csv_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame:
 
 
 def _parse_json_like(raw_output: str, template: Dict[str, Any]) -> pd.DataFrame | Dict: # Added template parameter
-    """Attempts to parse JSON-like text output."""
+    \"\"\"Attempts to parse JSON-like text output, preserving string types where possible.\"\"\"
     try:
         # Clean potential markdown code blocks
         cleaned_output = raw_output.strip().removeprefix('```json').removesuffix('```').strip()
         data = json.loads(cleaned_output)
         df = None
         if isinstance(data, list): # List of records
-            df = pd.DataFrame(data)
+            # Load into DataFrame, attempt to keep strings as strings
+            df = pd.DataFrame(data).astype(str) # Convert all columns to string after loading
         elif isinstance(data, dict): # Single record or structured dict
              try:
-                 df = pd.DataFrame([data])
+                 # Load into DataFrame, attempt to keep strings as strings
+                 df = pd.DataFrame([data]).astype(str) # Convert all columns to string after loading
              except ValueError:
-                 return data # Return the dict itself if not suitable for DataFrame
+                 # If it's a complex dict not suitable for DataFrame, return as is
+                 # Ensure nested values that look numeric are also strings if possible?
+                 # This might require recursive conversion, for now return the dict.
+                 # Consider converting all values to strings recursively if needed:
+                 # def convert_values_to_str(d):
+                 #    if isinstance(d, dict):
+                 #        return {k: convert_values_to_str(v) for k, v in d.items()}
+                 #    elif isinstance(d, list):
+                 #        return [convert_values_to_str(i) for i in d]
+                 #    else:
+                 #        return str(d)
+                 # return convert_values_to_str(data)
+                 return data # Return the dict itself for now
 
         if df is not None:
-            # Ensure columns intended as text remain string type based on template
-            if template and 'fields' in template:
-                for field in template.get('fields', []):
-                    col_name = field.get('name')
-                    col_format = field.get('format', '').lower()
-                    if col_name in df.columns:
-                        is_text_like = any(hint in col_format for hint in ['文本', '编号', '代码', 'id', 'text', 'code', 'string'])
-                        # Also treat columns as text if they contain non-numeric strings after initial load
-                        # This handles cases where template might be missing/inaccurate but data is clearly text
-                        try:
-                            if not is_text_like and df[col_name].apply(lambda x: isinstance(x, str) and not x.replace('.', '', 1).isdigit() and x).any():
-                                is_text_like = True
-                        except Exception: # Handle potential errors during apply
-                            pass
-
-                        if is_text_like:
-                            # Explicitly convert to string to preserve format
-                            df[col_name] = df[col_name].astype(str)
-                        # Optional: Add selective numeric/date conversion here if needed, similar to _parse_csv_like
-                        # else:
-                        #    if '数字' in col_format ...:
-                        #        df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
-                        #    elif '日期' in col_format ...:
-                        #        df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
-
-            return df # Return df after specific conversions, not converting everything to str here.
+            # Ensure all columns are string type for the editor
+            df = df.astype(str)
+            return df
         else: # Handle cases where JSON wasn't list or dict suitable for DataFrame
             st.warning("解析的JSON不是列表或字典，将作为文本处理。")
             return pd.DataFrame({'原始输出': [cleaned_output]}).astype(str) # Ensure string type
@@ -206,10 +164,9 @@ def format_data_for_export(
     results: List[Dict[str, Any]],
     template: Dict[str, Any]
 ) -> Dict[str, pd.DataFrame | Dict | str]:
-    """
-    Formats the raw results based on the template's output hint.
-    Returns a dictionary where keys are filenames and values are DataFrames, dicts, or raw strings.
-    """
+    \"\"\"Formats the raw results based on the template's output hint.
+    Returns a dictionary where keys are filenames and values are DataFrames (with string types), dicts, or raw strings.
+    \"\"\"
     formatted_data = {}
     if not results or not template:
         return formatted_data
@@ -224,30 +181,41 @@ def format_data_for_export(
             continue
 
         if not raw_output.strip():
-             formatted_data[filename] = pd.DataFrame() # Empty DataFrame for empty output
+             # Ensure empty DataFrame has string dtype if columns are known, otherwise empty
+             if template and 'fields' in template and template['fields']:
+                 field_names = [f['name'] for f in template['fields']]
+                 formatted_data[filename] = pd.DataFrame(columns=field_names).astype(str)
+             else:
+                 formatted_data[filename] = pd.DataFrame()
              continue
 
         parsed_result = None
         if output_hint == 'CSV':
-            # Pass template to parsing function
+            # Pass template to parsing function (now returns string DataFrame)
             parsed_result = _parse_csv_like(raw_output, template)
         elif output_hint == 'JSON':
-             # Pass template to parsing function
+             # Pass template to parsing function (now returns string DataFrame or dict)
             parsed_result = _parse_json_like(raw_output, template)
         # Add XLSX hint handling if needed, often similar to CSV parsing
         elif output_hint == 'XLSX':
-             # Pass template to parsing function
+             # Pass template to parsing function (now returns string DataFrame)
              parsed_result = _parse_csv_like(raw_output, template) # Treat like CSV for parsing
         else: # Default or unknown hint, treat as raw text split by lines
             parsed_result = pd.DataFrame({'原始输出': raw_output.strip().split('\n')}).astype(str) # Ensure string type
 
-        formatted_data[filename] = parsed_result
+        # Ensure the final result is stored correctly (DataFrame should be string type)
+        if isinstance(parsed_result, pd.DataFrame):
+            formatted_data[filename] = parsed_result.astype(str)
+        else:
+            formatted_data[filename] = parsed_result # Store dict or error string as is
 
     return formatted_data
 
 
 def provide_download_buttons(edited_data: Dict[str, pd.DataFrame | Dict | str]): # Changed parameter name
     """Provides download buttons for the formatted and potentially edited data."""
+    # Ensure data is explicitly converted to string before writing CSV/Excel if needed,
+    # although it should already be string type from the editor.
     st.subheader("5. 下载提取结果") # Changed section number
 
     if not edited_data: # Check the edited_data parameter
@@ -256,7 +224,7 @@ def provide_download_buttons(edited_data: Dict[str, pd.DataFrame | Dict | str]):
 
     # Combine data if possible (e.g., multiple CSVs into one)
     # Use the edited_data passed to the function
-    all_dfs = [df for df in edited_data.values() if isinstance(df, pd.DataFrame) and not df.empty]
+    all_dfs = [df.astype(str) for df in edited_data.values() if isinstance(df, pd.DataFrame) and not df.empty] # Ensure string type before concat
     combined_df = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
     # --- Offer Combined Download ---
@@ -264,9 +232,8 @@ def provide_download_buttons(edited_data: Dict[str, pd.DataFrame | Dict | str]):
         st.write("**合并下载 (所有成功处理并编辑后的表格数据):**") # Updated description
         col1, col2, col3 = st.columns(3)
 
-        # CSV Download
-        # Ensure all data is string for CSV to prevent Excel auto-formatting issues
-        csv_data = combined_df.astype(str).to_csv(index=False).encode('utf-8-sig') # Use utf-8-sig for Excel compatibility
+        # CSV Download - Already string type
+        csv_data = combined_df.to_csv(index=False).encode('utf-8-sig') # Use utf-8-sig for Excel compatibility
         col1.download_button(
             label="下载合并 CSV",
             data=csv_data,
@@ -275,14 +242,10 @@ def provide_download_buttons(edited_data: Dict[str, pd.DataFrame | Dict | str]):
             key="combined_csv_download_edited" # Unique key
         )
 
-        # XLSX Download
+        # XLSX Download - Already string type
         output = BytesIO()
-        # Write to Excel, explicitly setting text format for all columns might be needed
-        # if openpyxl auto-detection is still causing issues.
-        # However, pandas usually handles this well if dtypes are strings.
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-             # Convert to string before writing to Excel to preserve formatting
-            combined_df.astype(str).to_excel(writer, index=False, sheet_name='Combined Data')
+             combined_df.to_excel(writer, index=False, sheet_name='Combined Data') # Should write as text
         xlsx_data = output.getvalue()
         col2.download_button(
             label="下载合并 XLSX",
@@ -292,8 +255,8 @@ def provide_download_buttons(edited_data: Dict[str, pd.DataFrame | Dict | str]):
             key="combined_xlsx_download_edited" # Unique key
         )
 
-        # JSON Download (List of Records)
-        # Convert to string before JSON dump might not be necessary, JSON handles types
+        # JSON Download (List of Records) - Convert back to appropriate types if needed for JSON?
+        # Or keep as strings? Keeping as strings for consistency with editor.
         json_data = combined_df.to_json(orient="records", indent=2, force_ascii=False)
         col3.download_button(
             label="下载合并 JSON",
@@ -312,23 +275,26 @@ def provide_download_buttons(edited_data: Dict[str, pd.DataFrame | Dict | str]):
         base_name = os.path.splitext(filename)[0] # Remove original extension
         with st.expander(f"下载选项: {filename}"):
             if isinstance(data, pd.DataFrame):
-                if not data.empty:
+                # Ensure data is string type before download
+                data_str_df = data.astype(str)
+                if not data_str_df.empty:
                     col1_ind, col2_ind, col3_ind = st.columns(3)
-                    # CSV - Convert to string
-                    csv_ind = data.astype(str).to_csv(index=False).encode('utf-8-sig')
+                    # CSV - Already string type
+                    csv_ind = data_str_df.to_csv(index=False).encode('utf-8-sig')
                     col1_ind.download_button(f"下载 CSV", csv_ind, f"{base_name}_output_edited.csv", "text/csv", key=f"csv_edited_{filename}")
-                    # XLSX - Convert to string
+                    # XLSX - Already string type
                     output_ind = BytesIO()
                     with pd.ExcelWriter(output_ind, engine='openpyxl') as writer:
-                        data.astype(str).to_excel(writer, index=False, sheet_name='Sheet1')
+                        data_str_df.to_excel(writer, index=False, sheet_name='Sheet1')
                     xlsx_ind = output_ind.getvalue()
                     col2_ind.download_button(f"下载 XLSX", xlsx_ind, f"{base_name}_output_edited.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"xlsx_edited_{filename}")
-                    # JSON
-                    json_ind = data.to_json(orient="records", indent=2, force_ascii=False)
+                    # JSON - Keep as strings
+                    json_ind = data_str_df.to_json(orient="records", indent=2, force_ascii=False)
                     col3_ind.download_button(f"下载 JSON", json_ind.encode('utf-8'), f"{base_name}_output_edited.json", "application/json", key=f"json_edited_{filename}")
                 else:
                     st.info("此文件无表格数据可下载。")
             elif isinstance(data, dict): # Handle dictionary data (e.g., from JSON parsing)
+                 # Convert dict values to string for consistency? Or keep original types? Keep original for now.
                  json_str = json.dumps(data, indent=2, ensure_ascii=False)
                  st.download_button(f"下载 JSON", json_str.encode('utf-8'), f"{base_name}_output.json", "application/json", key=f"json_dict_{filename}") # No edit indication needed
                  st.write("数据为JSON对象，仅提供JSON下载。")
