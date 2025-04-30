@@ -12,15 +12,24 @@ def display_results(results: List[Dict[str, Any]]):
         st.info("没有可显示的处理结果。请先上传文件并运行处理。")
         return
 
-    for result in results:
-        st.markdown(f"**文件: {result.get('name', '未知文件')}**")
+    # Use enumerate to get index i for unique key generation
+    for i, result in enumerate(results):
+        filename = result.get('name', f'未知文件_{i}') # Add index if name is missing
+        st.markdown(f"**文件: {filename}**")
         if result.get('error'):
             st.error(f"处理错误: {result.get('raw_output', '未知错误')}")
         else:
-            # Use unique key for each text_area based on filename
-            st.text_area(f"原始输出##{result.get('name', 'raw')}", value=result.get('raw_output', ''), height=150, key=f"raw_output_{result.get('name')}")
+            # Include index 'i' in the key to ensure uniqueness
+            unique_key = f"raw_output_{filename}_{i}"
+            st.text_area(
+                f"原始输出##{filename}", # Label can remain the same or include index if needed
+                value=result.get('raw_output', ''),
+                height=150,
+                key=unique_key # Use the unique key
+            )
         # Optionally display the prompt used (for debugging)
-        with st.expander("查看使用的提示词"):
+        # Use unique key for expander as well if needed, though less likely to conflict
+        with st.expander(f"查看使用的提示词##{filename}_{i}", key=f"prompt_expander_{filename}_{i}"):
             st.text(result.get('prompt', '无提示词信息'))
         st.markdown("---")
 

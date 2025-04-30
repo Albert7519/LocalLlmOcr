@@ -26,7 +26,8 @@ if 'processor_instance' not in st.session_state:
 st.sidebar.markdown("---")
 st.sidebar.subheader("模型选择")
 
-available_models = ["--- 选择模型 ---", "Qwen/Qwen2.5-VL-7B-Instruct-AWQ", "OpenGVLab/InternVL3-8B"]
+# Add InternVL3-2B to the list
+available_models = ["--- 选择模型 ---", "Qwen/Qwen2.5-VL-7B-Instruct-AWQ", "OpenGVLab/InternVL3-8B", "OpenGVLab/InternVL3-2B"]
 # Find the index of the currently selected model, default to 0 if none selected
 current_index = 0
 if st.session_state.selected_model_name in available_models:
@@ -46,10 +47,13 @@ elif selected_model != "--- 选择模型 ---":
     load_model_button = st.sidebar.button("加载模型", key="load_model_btn")
     if load_model_button:
         # Clear previous model from memory if exists and selection changed
-        if st.session_state.model is not None:
+        # Check if selection actually changed to avoid unnecessary unloading/reloading
+        if st.session_state.model is not None and st.session_state.selected_model_name != selected_model:
             st.sidebar.info(f"正在卸载旧模型: {st.session_state.selected_model_name}...")
-            del st.session_state.model
-            del st.session_state.processor_instance
+            # Explicitly delete from session state
+            if 'model' in st.session_state: del st.session_state['model']
+            if 'processor_instance' in st.session_state: del st.session_state['processor_instance']
+            # Set to None just in case (though del should remove the key)
             st.session_state.model = None
             st.session_state.processor_instance = None
             st.session_state.selected_model_name = None
@@ -57,8 +61,14 @@ elif selected_model != "--- 选择模型 ---":
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             st.sidebar.info("旧模型已卸载。")
-
-
+            # Proceed to load the new model below
+        elif st.session_state.model is not None and st.session_state.selected_model_name == selected_model:
+             st.sidebar.info(f"模型 '{selected_model}' 已加载，无需重复加载。")
+             # Skip loading and rerun if the same model is selected and already loaded
+             # st.rerun() # Avoid rerun if nothing changed
+             pass # Do nothing
+        # else: # This condition covers initial load or loading after clearing
+        # Load the new model (or initial model)
         st.sidebar.info(f"开始加载模型: {selected_model}...")
         with st.spinner(f"正在加载模型 {selected_model}..."):
             model, processor_instance = model_loader.load_model_and_processor(selected_model)
@@ -67,15 +77,15 @@ elif selected_model != "--- 选择模型 ---":
                 st.session_state.processor_instance = processor_instance
                 st.session_state.selected_model_name = selected_model
                 st.sidebar.success(f"模型 {selected_model} 加载成功！")
-                # Use st.rerun() cautiously, might clear other states unintentionally
-                # Consider just letting the UI update naturally or using st.experimental_rerun() if needed
-                st.rerun() # Rerun to update UI status
+                st.rerun() # Rerun to update UI status after successful load
             else:
                 st.sidebar.error(f"加载模型 {selected_model} 失败。")
                 # Reset session state if loading failed
                 st.session_state.model = None
                 st.session_state.processor_instance = None
                 st.session_state.selected_model_name = None
+                st.rerun() # Rerun to clear spinner and show error
+
 else:
     st.sidebar.warning("请选择一个模型并点击加载。")
 
