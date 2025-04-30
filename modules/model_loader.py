@@ -10,7 +10,7 @@ def load_model_and_processor():
     try:
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             "Qwen/Qwen2.5-VL-7B-Instruct-AWQ",
-            torch_dtype=torch.float16,
+            # torch_dtype=torch.float16, # Removed to let the library handle AWQ loading
             attn_implementation="flash_attention_2", # Requires flash-attn installation
             device_map="cuda", # Load directly to GPU
         )
