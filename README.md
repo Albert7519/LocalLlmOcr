@@ -60,6 +60,8 @@ LocalLlmOcr/
 
 ## 🚀 安装与运行
 
+### 通用步骤
+
 1.  **克隆仓库 (如果需要):**
     ```bash
     git clone <your-repository-url>
@@ -70,26 +72,52 @@ LocalLlmOcr/
     ```bash
     python -m venv venv
     source venv/bin/activate  # Linux/macOS
-    # venv\Scripts\activate  # Windows
+    # venv\\Scripts\\activate  # Windows
     ```
 
-3.  **安装依赖:**
-    确保你的环境满足 PyTorch 和 CUDA 的要求 (如果使用 GPU)。然后安装 `requirements.txt` 中的包：
+### 针对 NVIDIA GPU (Linux/Windows)
+
+1.  **安装依赖:**
+    确保你的环境满足 PyTorch 和 CUDA 的要求。然后安装 `requirements.txt` 中的包：
     ```bash
     pip install -r requirements.txt
     ```
-    *注意:* `flash-attn` 的安装可能需要特定的编译环境或 CUDA 版本。
+    *注意:* `flash-attn` 的安装可能需要特定的编译环境或 CUDA 版本。如果遇到问题，可以尝试移除它，模型会回退到标准注意力实现。
 
-4.  **运行应用:**
+2.  **运行应用:**
     ```bash
     streamlit run streamlit_app.py
     ```
-    应用将在你的浏览器中打开 (通常是 `http://localhost:8501`)。
-    
-    *注意:* 如果遇到与 PyTorch 相关的错误，可以尝试禁用文件监视器：
+
+### 针对 macOS (Apple Silicon M 系列芯片)
+
+1.  **安装依赖:**
+    *   **安装 PyTorch for Mac:** 访问 [PyTorch 官网](https://pytorch.org/) 获取适合你 Mac 的安装命令。通常是：
+        ```bash
+        pip install torch torchvision torchaudio
+        ```
+    *   **安装其他依赖:** `flash-attn` 已从 `requirements.txt` 中移除，因为它不兼容 macOS。运行：
+        ```bash
+        pip install -r requirements.txt
+        ```
+
+2.  **运行应用:**
     ```bash
-    echo "[server]\nfileWatcherType = \"none\"" > .streamlit/config.toml
+    streamlit run streamlit_app.py
     ```
+    *   **说明:** 此版本已修改为自动检测并使用 Mac 的 Metal Performance Shaders (MPS) 后端进行 GPU 加速。无需 `flash-attn`。性能通常会低于在相当的 NVIDIA GPU 上使用 CUDA 的情况，但优于纯 CPU 运行。
+
+### 应用启动后
+
+应用将在你的浏览器中打开 (通常是 `http://localhost:8501`)。
+
+*注意:* 如果遇到与 PyTorch 相关的错误 (在任何系统上)，可以尝试禁用文件监视器：
+```bash
+# 在项目根目录下创建或修改 .streamlit/config.toml 文件
+echo "[server]\\nfileWatcherType = \\"none\\"" > .streamlit/config.toml
+# 然后重新运行 streamlit
+```
+禁用后，修改代码需要手动重启 Streamlit 服务才能生效。
 
 ## 📖 使用说明
 
