@@ -237,9 +237,8 @@ def process_images(
                     padding=True,
                     return_tensors="pt",
                 ).to(model.device)
+                # Keep input_ids for calculating token length later
                 input_ids = inputs.get('input_ids')
-                pixel_values = inputs.get('pixel_values') # Qwen processor provides pixel_values
-                attention_mask = inputs.get('attention_mask')
                 # --- End Qwen-VL Input ---
 
                 # 3. Generate response (Qwen)
@@ -248,10 +247,9 @@ def process_images(
                         "max_new_tokens": 1536,
                         "do_sample": False, # Use greedy decoding for consistency
                     }
+                    # Pass the entire 'inputs' dictionary unpacked
                     generated_ids = model.generate(
-                        input_ids=input_ids,
-                        pixel_values=pixel_values, # Pass preprocessed pixel values
-                        attention_mask=attention_mask,
+                        **inputs, # Pass all prepared inputs
                         **gen_kwargs
                     )
                 # 4. Decode the output (Qwen)
@@ -267,7 +265,7 @@ def process_images(
                 result_text = output_text[0] if output_text else ""
 
 
-            elif "InternVL" in selected_model_name: # This condition now covers both 8B and 2B
+            elif "InternVL" in selected_model_name:
                 # --- InternVL Input Preparation (using AutoTokenizer + custom preprocessing) ---
                 # Here, 'processor' is the AutoTokenizer instance
                 tokenizer = processor

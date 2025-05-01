@@ -28,8 +28,8 @@ def display_results(results: List[Dict[str, Any]]):
                 key=unique_key # Use the unique key
             )
         # Optionally display the prompt used (for debugging)
-        # Use unique key for expander as well if needed, though less likely to conflict
-        with st.expander(f"查看使用的提示词##{filename}_{i}", key=f"prompt_expander_{filename}_{i}"):
+        # Remove the 'key' argument from st.expander
+        with st.expander(f"查看使用的提示词##{filename}_{i}"): # Removed key argument
             st.text(result.get('prompt', '无提示词信息'))
         st.markdown("---")
 
