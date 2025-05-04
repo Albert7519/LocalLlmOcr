@@ -62,7 +62,7 @@ LocalLlmOcr/
 
 1.  **克隆仓库 (如果需要):**
     ```bash
-    git clone <your-repository-url>
+    git clone https://github.com/Albert7519/LocalLlmOcr
     cd LocalLlmOcr
     ```
 
